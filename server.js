@@ -359,7 +359,16 @@ app.post('/api/events/:eventId/metadata', async (req, res) => {
   }
 });
 
-// Add this endpoint for uploading images
+/**
+ * Image upload endpoint with improved error handling and fallback mechanisms
+ * This code should replace the existing upload endpoint in server.js
+ * 
+ * Key improvements:
+ * - Better error handling for S3 uploads
+ * - Fallback to local storage when S3 fails
+ * - Verification that uploaded files exist and are accessible
+ * - Detailed logging for troubleshooting
+ */
 app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req, res) => {
   try {
     const { eventId } = req.params;
@@ -368,42 +377,109 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
       return res.status(400).json({ error: 'No se ha subido ninguna imagen' });
     }
     
+    console.log('Received upload request for event:', eventId);
+    console.log('File details:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path || 'Using memory storage',
+      buffer: req.file.buffer ? 'Buffer present' : 'No buffer'
+    });
+    
     let imagePath;
     
     // Check for S3 configuration
     if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.S3_BUCKET_NAME) {
+      console.log('Using S3 storage');
       try {
         // Import the S3 storage module
-        const { uploadFile } = await import('./s3Storage.js');
+        let uploadToS3;
+        try {
+          const s3Storage = await import('./s3Storage.js');
+          uploadToS3 = s3Storage.uploadFile;
+          console.log('S3 storage module loaded successfully');
+        } catch (importError) {
+          console.error('Error importing S3 storage module:', importError);
+          throw new Error('S3 module import failed: ' + importError.message);
+        }
         
-        // Upload the file to S3
-        imagePath = await uploadFile({
-          buffer: req.file.buffer || await fs.readFile(req.file.path),
-          originalname: req.file.originalname,
-          mimetype: req.file.mimetype
-        });
-        
-        console.log('File uploaded to S3:', imagePath);
-        
-        // If we have a local file, remove it (in case of disk storage)
-        if (req.file.path) {
+        // Ensure we have the file buffer
+        let fileBuffer;
+        if (req.file.buffer) {
+          fileBuffer = req.file.buffer;
+          console.log('Using buffer from memory storage');
+        } else if (req.file.path) {
           try {
-            await fs.unlink(req.file.path);
-          } catch (unlinkError) {
-            console.error('Error deleting local file:', unlinkError);
+            fileBuffer = await fs.readFile(req.file.path);
+            console.log('Successfully read file from disk');
+          } catch (readError) {
+            console.error('Error reading file from disk:', readError);
+            throw new Error('Failed to read uploaded file from disk');
+          }
+        } else {
+          throw new Error('No file buffer or path available');
+        }
+        
+        // Upload to S3
+        try {
+          imagePath = await uploadToS3({
+            buffer: fileBuffer,
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype
+          });
+          
+          console.log('File uploaded to S3:', imagePath);
+          
+          // If we have a local file, remove it (in case of disk storage)
+          if (req.file.path) {
+            try {
+              await fs.unlink(req.file.path);
+              console.log('Local file deleted after S3 upload');
+            } catch (unlinkError) {
+              console.error('Error deleting local file:', unlinkError);
+              // Continue anyway since the S3 upload was successful
+            }
+          }
+        } catch (s3Error) {
+          console.error('Error uploading to S3:', s3Error);
+          // If S3 upload fails, let's fall back to local storage if we have a path
+          if (req.file.path) {
+            console.log('S3 upload failed, falling back to local storage');
+            imagePath = `/uploads/events/${path.basename(req.file.path)}`;
+          } else {
+            throw new Error('S3 upload failed and no local fallback available: ' + s3Error.message);
           }
         }
-      } catch (s3Error) {
-        console.error('Error uploading to S3:', s3Error);
+      } catch (error) {
+        console.error('Error in S3 upload process:', error);
         
-        // Fallback to local storage if S3 upload fails
-        imagePath = `/uploads/events/${req.file.filename}`;
-        console.log('Falling back to local storage:', imagePath);
+        // If we hit an error in the S3 upload process but have a local file, use that as fallback
+        if (req.file.path) {
+          console.log('Error in S3 process, falling back to local storage');
+          imagePath = `/uploads/events/${path.basename(req.file.path)}`;
+        } else {
+          throw error; // Re-throw the error if we can't fall back
+        }
       }
     } else {
       // Use local storage if S3 is not configured
-      imagePath = `/uploads/events/${req.file.filename}`;
-      console.log('Using local storage (S3 not configured):', imagePath);
+      console.log('S3 not configured, using local storage');
+      
+      if (!req.file.path) {
+        throw new Error('No file path available for local storage');
+      }
+      
+      imagePath = `/uploads/events/${path.basename(req.file.path)}`;
+      console.log('Using local storage path:', imagePath);
+      
+      // Verify the file exists in the local filesystem
+      try {
+        await fs.access(path.join(__dirname, 'public', imagePath));
+        console.log('Verified local file exists at:', path.join(__dirname, 'public', imagePath));
+      } catch (accessError) {
+        console.error('Warning: Could not verify local file exists:', accessError);
+        // Continue anyway, as the file might be accessible from the web
+      }
     }
     
     // Update the event metadata with the image path
@@ -417,6 +493,7 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
     
     await writeJsonFile(METADATA_FILE, allMetadata);
     
+    // Return success response
     res.status(200).json({ 
       success: true, 
       message: 'Imagen subida con éxito',
@@ -424,7 +501,13 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
     });
   } catch (error) {
     console.error('Error subiendo imagen:', error);
-    res.status(500).json({ error: 'Error al subir la imagen' });
+    // Provide more detailed error response
+    res.status(500).json({ 
+      error: 'Error al subir la imagen',
+      message: error.message,
+      // Don't include stack trace in production, but useful for debugging
+      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+    });
   }
 });
 
