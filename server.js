@@ -83,24 +83,33 @@ try {
   console.log('Will use mock event data as fallback');
 }
 
-// Configure multer for memory storage (local file storage for now)
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, 'public', 'uploads', 'events');
-    
-    // Create directory if it doesn't exist
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (err) {
-      cb(err);
+// Configure multer for memory storage when S3 is available, disk storage as fallback
+let storage;
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.S3_BUCKET_NAME) {
+  // Use memory storage for S3 uploads
+  storage = multer.memoryStorage();
+  console.log('Using memory storage for S3 uploads');
+} else {
+  // Use disk storage as fallback
+  storage = multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(__dirname, 'public', 'uploads', 'events');
+      
+      // Create directory if it doesn't exist
+      try {
+        await fs.mkdir(uploadDir, { recursive: true });
+        cb(null, uploadDir);
+      } catch (err) {
+        cb(err);
+      }
+    },
+    filename: (req, file, cb) => {
+      const uniqueFilename = `${uuidv4()}-${file.originalname}`;
+      cb(null, uniqueFilename);
     }
-  },
-  filename: (req, file, cb) => {
-    const uniqueFilename = `${uuidv4()}-${file.originalname}`;
-    cb(null, uniqueFilename);
-  }
-});
+  });
+  console.log('Using disk storage (S3 not configured)');
+}
 
 const upload = multer({ 
   storage,
@@ -359,8 +368,43 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
       return res.status(400).json({ error: 'No se ha subido ninguna imagen' });
     }
     
-    // The file path for the browser
-    const imagePath = `/uploads/events/${req.file.filename}`;
+    let imagePath;
+    
+    // Check for S3 configuration
+    if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.S3_BUCKET_NAME) {
+      try {
+        // Import the S3 storage module
+        const { uploadFile } = await import('./s3Storage.js');
+        
+        // Upload the file to S3
+        imagePath = await uploadFile({
+          buffer: req.file.buffer || await fs.readFile(req.file.path),
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype
+        });
+        
+        console.log('File uploaded to S3:', imagePath);
+        
+        // If we have a local file, remove it (in case of disk storage)
+        if (req.file.path) {
+          try {
+            await fs.unlink(req.file.path);
+          } catch (unlinkError) {
+            console.error('Error deleting local file:', unlinkError);
+          }
+        }
+      } catch (s3Error) {
+        console.error('Error uploading to S3:', s3Error);
+        
+        // Fallback to local storage if S3 upload fails
+        imagePath = `/uploads/events/${req.file.filename}`;
+        console.log('Falling back to local storage:', imagePath);
+      }
+    } else {
+      // Use local storage if S3 is not configured
+      imagePath = `/uploads/events/${req.file.filename}`;
+      console.log('Using local storage (S3 not configured):', imagePath);
+    }
     
     // Update the event metadata with the image path
     const allMetadata = await readJsonFile(METADATA_FILE, {});
