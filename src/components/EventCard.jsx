@@ -1,88 +1,111 @@
 import React, { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ThumbsUp, ThumbsDown } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Image as ImageIcon } from 'lucide-react'
 import AudioRecorder from './AudioRecorder'
 import { calendarService } from '../services/calendarService'
 import axios from 'axios'
 
+// Default image if none is available
+const DEFAULT_IMAGE = '/images/events/default.jpg';
+
+// Fallback category images
+const IMAGE_CATEGORY_MAP = {
+  'bingo': '/images/events/bingo.jpg',
+  'walk': '/images/events/walking.jpg',
+  'dance': '/images/events/dance.jpg',
+  'health': '/images/events/health.jpg'
+};
+
+// Fallback location images
+const LOCATION_IMAGE_MAP = {
+  'Community Center': '/images/locations/community-center.jpg',
+  'City Park': '/images/locations/city-park.jpg',
+  'Sports Complex': '/images/locations/sports-complex.jpg'
+};
+
 const getEventImage = async (event) => {
   try {
     // Primero intentar obtener la imagen personalizada de los metadatos
-    const metadata = await axios.get(`/api/events/${event.id}/metadata`);
+    const response = await axios.get(`/api/events/${event.id}/metadata`);
+    const metadata = response.data;
     
-    if (metadata.data?.imagePath) {
-      return metadata.data.imagePath;
+    // Check if we have a custom image path
+    if (metadata?.imagePath) {
+      // Check if image exists (for remote S3 images we'll assume they exist)
+      if (metadata.imagePath.startsWith('http')) {
+        return metadata.imagePath;
+      } else {
+        // For local images, we should verify they exist but it's tricky in the frontend
+        // Let's just return and let the img element's error handler catch it
+        return metadata.imagePath;
+      }
     }
     
-    // Si no hay imagen personalizada, usar la categoría
-    // Ya sea de los metadatos o extraída de la descripción
-    const category = metadata.data?.imageCategory;
-    
-    if (category) {
-      // Usar la categoría de los metadatos
-      const imageMap = {
-        'bingo': '/images/events/bingo.jpg',
-        'walk': '/images/events/walking.jpg',
-        'dance': '/images/events/dance.jpg',
-        'health': '/images/events/health.jpg'
-      };
-      
-      return imageMap[category] || '/images/events/default.jpg';
+    // If no custom image, try to use category from metadata
+    if (metadata?.imageCategory) {
+      return IMAGE_CATEGORY_MAP[metadata.imageCategory] || DEFAULT_IMAGE;
     }
     
     // Método antiguo: extraer categoría de la descripción
     const categoryMatch = event.description?.match(/\[CATEGORY:\s*(\w+)\]/) || 
                          event.description?.match(/#CATEGORY:(\w+)/);
     
-    // Map categories to images
-    const imageMap = {
-      'bingo': '/images/events/bingo.jpg',
-      'walk': '/images/events/walking.jpg',
-      'dance': '/images/events/dance.jpg',
-      'health': '/images/events/health.jpg'
-    };
-
-    // Fallback to location-based images if no category
-    const locationMap = {
-      'Community Center': '/images/locations/community-center.jpg',
-      'City Park': '/images/locations/city-park.jpg',
-      'Sports Complex': '/images/locations/sports-complex.jpg'
-    };
-
-    // Try to get image by category, then location, then default
-    return imageMap[categoryMatch?.[1]] || 
-           locationMap[event.location] || 
-           '/images/events/default.jpg';
-           
+    if (categoryMatch && categoryMatch[1] && IMAGE_CATEGORY_MAP[categoryMatch[1]]) {
+      return IMAGE_CATEGORY_MAP[categoryMatch[1]];
+    }
+    
+    // Try to get image based on location
+    if (event.location && LOCATION_IMAGE_MAP[event.location]) {
+      return LOCATION_IMAGE_MAP[event.location];
+    }
+    
+    // Default fallback
+    return DEFAULT_IMAGE;
   } catch (error) {
     console.error('Error getting event image:', error);
-    return '/images/events/default.jpg';
+    return DEFAULT_IMAGE;
   }
 };
 
 const EventCard = ({ event, onResponseChange }) => {
   const [vote, setVote] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [eventImage, setEventImage] = useState('/images/events/default.jpg')
+  const [eventImage, setEventImage] = useState(DEFAULT_IMAGE)
   const [eventMetadata, setEventMetadata] = useState(null)
+  const [imageError, setImageError] = useState(false)
   
   useEffect(() => {
     const loadEventImage = async () => {
-      const imageSrc = await getEventImage(event);
-      setEventImage(imageSrc);
-      
-      // También cargar los metadatos para mostrar información adicional
       try {
-        const metadataResponse = await axios.get(`/api/events/${event.id}/metadata`);
-        setEventMetadata(metadataResponse.data);
+        // Reset image error state
+        setImageError(false);
+        
+        // Get image URL
+        const imageSrc = await getEventImage(event);
+        setEventImage(imageSrc);
+        
+        // Also load metadata for additional info
+        try {
+          const metadataResponse = await axios.get(`/api/events/${event.id}/metadata`);
+          setEventMetadata(metadataResponse.data);
+        } catch (metadataError) {
+          console.error('Error loading event metadata:', metadataError);
+        }
       } catch (error) {
-        console.error('Error loading event metadata:', error);
+        console.error('Error in loadEventImage:', error);
+        setEventImage(DEFAULT_IMAGE);
       }
     };
     
     loadEventImage();
   }, [event]);
+
+  const handleImageError = () => {
+    // If the image fails to load, set error state and use default image
+    setImageError(true);
+    setEventImage(DEFAULT_IMAGE);
+  };
 
   const handleVote = async (newVote) => {
     if (submitting) return;
@@ -120,12 +143,22 @@ const EventCard = ({ event, onResponseChange }) => {
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden">
       {/* Event Image */}
-      <div className="w-full h-48 relative">
-        <img
-          src={eventImage}
-          alt={`Imagen para ${event.title}`}
-          className="w-full h-full object-cover"
-        />
+      <div className="w-full h-48 relative bg-gray-200">
+        {imageError ? (
+          <div className="flex items-center justify-center h-full bg-blue-50">
+            <div className="text-center">
+              <ImageIcon size={48} className="mx-auto mb-2 text-blue-300" />
+              <p className="text-lg text-blue-500">{event.title}</p>
+            </div>
+          </div>
+        ) : (
+          <img
+            src={eventImage}
+            alt={`Imagen para ${event.title}`}
+            className="w-full h-full object-cover"
+            onError={handleImageError}
+          />
+        )}
       </div>
 
       <div className="p-8">

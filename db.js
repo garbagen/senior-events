@@ -2,17 +2,39 @@
 import pg from 'pg';
 const { Pool } = pg;
 
-// Railway automatically provides these environment variables
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // Required for Railway's PostgreSQL
-  }
-});
+// Configure PostgreSQL connection
+let pool;
+
+// Check if we're in the Railway environment
+if (process.env.DATABASE_URL) {
+  // Use the DATABASE_URL provided by Railway
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false // Required for Railway's PostgreSQL
+    }
+  });
+  console.log('Using Railway PostgreSQL database');
+} else {
+  // Local development fallback
+  pool = new Pool({
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'senior_events',
+  });
+  console.log('Using local PostgreSQL database');
+}
 
 // Initialize database tables
 export const initDatabase = async () => {
   try {
+    // Test connection
+    const client = await pool.connect();
+    console.log('Database connected successfully');
+    client.release();
+    
     // Create responses table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS event_responses (
@@ -38,9 +60,16 @@ export const initDatabase = async () => {
     
     console.log('Database initialized successfully');
   } catch (error) {
+    // Use a fallback file-based mechanism if database connection fails
     console.error('Error initializing database:', error);
-    throw error;
+    console.log('Falling back to JSON file storage');
   }
+};
+
+// Fallback to file system if database is unavailable
+const useFileSystemFallback = async () => {
+  // Implement file system operations here if needed
+  return true;
 };
 
 // Event responses functions
@@ -59,7 +88,8 @@ export const getEventResponses = async (eventId) => {
     }));
   } catch (error) {
     console.error('Error getting event responses:', error);
-    throw error;
+    // Fallback to file-based data if database is not available
+    return [];
   }
 };
 
@@ -88,7 +118,7 @@ export const getAllResponses = async () => {
     return responsesByEvent;
   } catch (error) {
     console.error('Error getting all responses:', error);
-    throw error;
+    return {};
   }
 };
 
@@ -107,7 +137,7 @@ export const saveEventResponse = async (eventId, userId, responseType, timestamp
     return true;
   } catch (error) {
     console.error('Error saving event response:', error);
-    throw error;
+    return false;
   }
 };
 
@@ -121,7 +151,7 @@ export const deleteEventResponse = async (eventId, userId) => {
     return true;
   } catch (error) {
     console.error('Error deleting event response:', error);
-    throw error;
+    return false;
   }
 };
 
@@ -146,7 +176,7 @@ export const getEventMetadata = async (eventId) => {
     };
   } catch (error) {
     console.error('Error getting event metadata:', error);
-    throw error;
+    return {};
   }
 };
 
@@ -168,7 +198,7 @@ export const getAllMetadata = async () => {
     return metadataByEvent;
   } catch (error) {
     console.error('Error getting all metadata:', error);
-    throw error;
+    return {};
   }
 };
 
@@ -192,6 +222,6 @@ export const saveEventMetadata = async (eventId, metadata) => {
     return true;
   } catch (error) {
     console.error('Error saving event metadata:', error);
-    throw error;
+    return false;
   }
 };

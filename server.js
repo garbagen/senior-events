@@ -9,11 +9,12 @@ import dotenv from 'dotenv';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import * as db from './db.js';
-import { uploadFile } from './s3Storage.js';
+import fs from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -27,15 +28,71 @@ app.use(express.static(path.join(__dirname, 'dist')));
 const CALENDAR_ID = process.env.CALENDAR_ID || 'c_5a1929868d3d87d69d4b19fc0f3b13ebfb86d8a40dbe5a855c0f80cf464f3757@group.calendar.google.com';
 
 // Initialize Google Calendar API with service account
-const auth = new google.auth.GoogleAuth({
-  // Use ENV variables for Railway deployment
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT || '{}'),
-  scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
-});
+let calendar;
+try {
+  // Try to parse the service account JSON from environment variable
+  let credentials;
+  if (process.env.GOOGLE_SERVICE_ACCOUNT) {
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+    } catch (e) {
+      console.error('Error parsing GOOGLE_SERVICE_ACCOUNT JSON:', e);
+      credentials = {};
+    }
+  } else {
+    // Try to load from local file (for local development)
+    try {
+      const serviceAccountPath = path.join(__dirname, 'service-account.json');
+      const serviceAccountContent = await fs.readFile(serviceAccountPath, 'utf-8');
+      credentials = JSON.parse(serviceAccountContent);
+    } catch (e) {
+      console.error('Error loading service-account.json:', e);
+      credentials = {};
+    }
+  }
 
-const calendar = google.calendar({ version: 'v3', auth });
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
+  });
 
-// Configure multer for memory storage (for S3 uploads)
+  calendar = google.calendar({ version: 'v3', auth });
+  console.log('Google Calendar API initialized successfully');
+} catch (error) {
+  console.error('Error initializing Google Calendar API:', error);
+  // Create a fallback for testing purposes
+  calendar = {
+    events: {
+      list: async () => {
+        console.log('Using mock calendar data');
+        return {
+          data: {
+            items: [
+              {
+                id: 'mock1',
+                summary: 'Evento de prueba 1',
+                description: 'Una descripción para el evento de prueba',
+                location: 'Centro comunitario',
+                start: { dateTime: new Date(Date.now() + 86400000).toISOString() },
+                end: { dateTime: new Date(Date.now() + 86400000 + 3600000).toISOString() }
+              },
+              {
+                id: 'mock2',
+                summary: 'Evento de prueba 2',
+                description: 'Otra descripción para el evento de prueba',
+                location: 'Parque central',
+                start: { dateTime: new Date(Date.now() + 172800000).toISOString() },
+                end: { dateTime: new Date(Date.now() + 172800000 + 5400000).toISOString() }
+              }
+            ]
+          }
+        };
+      }
+    }
+  };
+}
+
+// Configure multer for memory storage (for file uploads)
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -54,8 +111,22 @@ const upload = multer({
   }
 });
 
-// Initialize the database
-db.initDatabase().catch(console.error);
+// Initialize the database (but don't stop the server if it fails)
+db.initDatabase().catch(error => {
+  console.error('Database initialization error (continuing anyway):', error);
+});
+
+// Setup file upload directory for local development
+const ensureUploadDir = async () => {
+  const uploadsDir = path.join(__dirname, 'public', 'uploads', 'events');
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+    console.log('Upload directory created:', uploadsDir);
+  } catch (error) {
+    console.error('Error creating upload directory:', error);
+  }
+};
+ensureUploadDir();
 
 // API Routes
 app.get('/api/events', async (req, res) => {
@@ -80,7 +151,10 @@ app.get('/api/events', async (req, res) => {
     res.json(events);
   } catch (error) {
     console.error('Error fetching events:', error);
-    res.status(500).json({ error: 'Failed to fetch events' });
+    res.status(500).json({ 
+      error: 'Failed to fetch events',
+      message: error.message
+    });
   }
 });
 
@@ -198,7 +272,20 @@ app.post('/api/events/:eventId/metadata', async (req, res) => {
   }
 });
 
-// Add this endpoint for uploading images to S3
+// Local file storage for uploads (as a fallback when S3 is not configured)
+const saveLocalFile = async (file, eventId) => {
+  const uniqueFilename = `${uuidv4()}-${file.originalname}`;
+  const uploadDir = path.join(__dirname, 'public', 'uploads', 'events');
+  const filePath = path.join(uploadDir, uniqueFilename);
+  
+  await fs.mkdir(uploadDir, { recursive: true });
+  await fs.writeFile(filePath, file.buffer);
+  
+  // Return relative path
+  return `/uploads/events/${uniqueFilename}`;
+};
+
+// Add this endpoint for uploading images
 app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req, res) => {
   try {
     const { eventId } = req.params;
@@ -207,8 +294,21 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
       return res.status(400).json({ error: 'No se ha subido ninguna imagen' });
     }
     
-    // Upload to S3 and get the URL
-    const imagePath = await uploadFile(req.file);
+    let imagePath;
+    
+    // Check if S3 module is available
+    try {
+      // Try to import S3Storage dynamically
+      const { uploadFile } = await import('./s3Storage.js');
+      // Upload to S3 and get the URL
+      imagePath = await uploadFile(req.file);
+      console.log('Image uploaded to S3:', imagePath);
+    } catch (s3Error) {
+      console.error('Error using S3, falling back to local storage:', s3Error);
+      // Fallback to local file storage
+      imagePath = await saveLocalFile(req.file, eventId);
+      console.log('Image saved locally:', imagePath);
+    }
     
     // Update the event metadata with the image path
     await db.saveEventMetadata(eventId, {
@@ -226,13 +326,15 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
   }
 });
 
-// S3 is used for uploads, so no need to serve local files
+// Serve static files from the public directory
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
 // For SPA routing, return the main index.html for any unmatched route
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
+// Use the PORT environment variable provided by Railway or default to 3000
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
