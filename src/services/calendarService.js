@@ -1,7 +1,8 @@
 // src/services/calendarService.js
 import axios from 'axios';
 
-const BASE_URL = '/api';
+// In production, API requests will be sent to the same host
+const BASE_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export const calendarService = {
   async getEvents() {
@@ -27,7 +28,6 @@ export const calendarService = {
   async respondToEvent(eventId, responseType) {
     try {
       // Generate a simple anonymous user ID for tracking responses
-      // In a real app, you might want to use a more stable identifier
       const userId = `user_${Date.now()}`;
       
       const result = await axios.post(`${BASE_URL}/events/${eventId}/respond`, {
@@ -52,7 +52,6 @@ export const calendarService = {
     }
   },
   
-  // New methods for event metadata
   async getEventMetadata(eventId) {
     try {
       const response = await axios.get(`${BASE_URL}/events/${eventId}/metadata`);
