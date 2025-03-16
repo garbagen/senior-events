@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { calendarService } from '../services/calendarService';
-import { Edit, Save, X, Image, Info, Upload, Trash2 } from 'lucide-react';
-import axios from 'axios';
+import { Edit, Save, X, Image, Info, Upload, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 const EventManager = () => {
   const [events, setEvents] = useState([]);
@@ -11,6 +9,7 @@ const EventManager = () => {
   const [metadata, setMetadata] = useState({});
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState({});
 
   // Categories for event images
   const categories = [
@@ -24,13 +23,20 @@ const EventManager = () => {
     const fetchEvents = async () => {
       try {
         setLoading(true);
-        const eventsData = await calendarService.getEvents();
+        
+        // Fetch events
+        const eventsResponse = await fetch('/api/events');
+        if (!eventsResponse.ok) {
+          throw new Error(`Error fetching events: ${eventsResponse.status}`);
+        }
+        const eventsData = await eventsResponse.json();
         setEvents(eventsData);
         
         // Fetch metadata for all events
         const metadataPromises = eventsData.map(event => 
-          axios.get(`/api/events/${event.id}/metadata`)
-            .then(res => ({ [event.id]: res.data }))
+          fetch(`/api/events/${event.id}/metadata`)
+            .then(res => res.json())
+            .then(data => ({ [event.id]: data }))
             .catch(() => ({ [event.id]: {} }))
         );
         
@@ -53,23 +59,37 @@ const EventManager = () => {
 
   const handleEdit = (eventId) => {
     setEditingEventId(eventId);
+    // Reset upload status when starting to edit
+    setUploadStatus({});
   };
 
   const handleCancel = () => {
     setEditingEventId(null);
+    setUploadStatus({});
   };
 
   const handleSave = async (eventId) => {
     try {
       setSaving(true);
       
-      await axios.post(`/api/events/${eventId}/metadata`, metadata[eventId] || {});
+      // Make a POST request to save metadata
+      const response = await fetch(`/api/events/${eventId}/metadata`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(metadata[eventId] || {})
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error saving metadata');
+      }
       
       // Success
       setEditingEventId(null);
     } catch (error) {
       console.error('Error saving metadata:', error);
-      alert('Error al guardar los cambios');
+      alert('Error al guardar los cambios: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -99,43 +119,95 @@ const EventManager = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validar que es una imagen
+    // Validate that it's an image
     if (!file.type.startsWith('image/')) {
-      alert('Por favor, seleccione un archivo de imagen válido');
+      setUploadStatus({
+        status: 'error',
+        message: 'Por favor, seleccione un archivo de imagen válido'
+      });
       return;
     }
 
     try {
       setUploadingImage(true);
+      setUploadStatus({
+        status: 'uploading',
+        message: 'Subiendo imagen...'
+      });
 
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await axios.post(
-        `/api/events/${eventId}/upload-image`, 
-        formData, 
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
+      // Log what we're uploading to help debugging
+      console.log('Uploading file:', file.name, file.type, file.size);
+      
+      const response = await fetch(`/api/events/${eventId}/upload-image`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Error al subir la imagen');
+      }
 
-      // Actualizar el estado con la nueva ruta de la imagen
+      // Update the state with the new image path
+      const imagePath = responseData.imagePath;
+      
       setMetadata(prev => ({
         ...prev,
         [eventId]: {
           ...prev[eventId],
-          imagePath: response.data.imagePath
+          imagePath: imagePath
         }
       }));
 
-      alert('Imagen subida con éxito');
+      setUploadStatus({
+        status: 'success',
+        message: 'Imagen subida con éxito',
+        path: imagePath
+      });
+      
+      // Verify the image can be loaded
+      setTimeout(() => {
+        verifyImageExists(imagePath);
+      }, 1000);
+
     } catch (error) {
       console.error('Error uploading image:', error);
-      alert('Error al subir la imagen');
+      setUploadStatus({
+        status: 'error',
+        message: `Error al subir la imagen: ${error.message}`
+      });
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const verifyImageExists = async (imagePath) => {
+    try {
+      // For paths that aren't full URLs (local uploads)
+      const imageUrl = imagePath.startsWith('http') ? imagePath : imagePath;
+      
+      // Try to fetch the image to see if it exists
+      const imageResponse = await fetch(imageUrl, { method: 'HEAD' });
+      
+      if (!imageResponse.ok) {
+        throw new Error(`Image verification failed with status: ${imageResponse.status}`);
+      }
+      
+      setUploadStatus(prev => ({
+        ...prev,
+        verified: true
+      }));
+    } catch (error) {
+      console.error('Image verification failed:', error);
+      setUploadStatus(prev => ({
+        ...prev,
+        verified: false,
+        verifyError: error.message
+      }));
     }
   };
 
@@ -145,15 +217,26 @@ const EventManager = () => {
     try {
       setSaving(true);
 
-      // Eliminar la ruta de la imagen de los metadatos
+      // Remove the image path from metadata
       const updatedMetadata = {
         ...metadata[eventId],
         imagePath: null
       };
 
-      await axios.post(`/api/events/${eventId}/metadata`, updatedMetadata);
+      // Update on the server
+      const response = await fetch(`/api/events/${eventId}/metadata`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedMetadata)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error removing image metadata');
+      }
 
-      // Actualizar el estado
+      // Update the state
       setMetadata(prev => ({
         ...prev,
         [eventId]: {
@@ -162,10 +245,12 @@ const EventManager = () => {
         }
       }));
 
-      alert('Imagen eliminada con éxito');
+      // Reset upload status
+      setUploadStatus({});
+
     } catch (error) {
       console.error('Error removing image:', error);
-      alert('Error al eliminar la imagen');
+      alert('Error al eliminar la imagen: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -202,6 +287,15 @@ const EventManager = () => {
           Aquí puede gestionar información adicional para cada evento, como imágenes personalizadas
           y detalles que no están disponibles en Google Calendar.
         </p>
+        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+          <h3 className="text-lg font-semibold text-blue-800 mb-2">🛠️ Guía para subir imágenes</h3>
+          <ul className="list-disc pl-6 text-blue-700 space-y-1">
+            <li>Las imágenes deben ser menores a 5MB</li>
+            <li>Si usa S3, verifique que las credenciales sean correctas en .env</li>
+            <li>Si aparece 'Imagen subida con éxito' pero no se ve, revise los permisos de carpeta</li>
+            <li>El estado 'Verificado' confirma que la imagen es accesible</li>
+          </ul>
+        </div>
       </div>
       
       <div className="space-y-6">
@@ -256,7 +350,7 @@ const EventManager = () => {
               
               {editingEventId === event.id ? (
                 <div className="space-y-6 mt-4 bg-gray-50 p-4 rounded-lg">
-                  {/* Subida de imagen */}
+                  {/* Image upload */}
                   <div>
                     <label className="flex items-center text-xl font-semibold mb-2 text-gray-700">
                       <Image size={20} className="mr-2 text-blue-600" />
@@ -270,6 +364,24 @@ const EventManager = () => {
                             src={metadata[event.id].imagePath} 
                             alt={event.title}
                             className="w-full h-48 object-cover rounded-lg"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              const errorDiv = document.createElement('div');
+                              errorDiv.className = 'w-full h-48 bg-red-50 rounded-lg flex items-center justify-center';
+                              errorDiv.innerHTML = `
+                                <div class="text-center">
+                                  <div class="flex justify-center mb-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
+                                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                  </div>
+                                  <p class="text-red-600">Error al cargar la imagen</p>
+                                </div>
+                              `;
+                              e.target.parentNode.appendChild(errorDiv);
+                            }}
                           />
                           <button
                             onClick={() => handleRemoveImage(event.id)}
@@ -277,6 +389,23 @@ const EventManager = () => {
                           >
                             <Trash2 size={16} />
                           </button>
+                        </div>
+                        
+                        {/* Image status indicator */}
+                        <div className="mt-2 text-center">
+                          {uploadStatus.status === 'success' && (
+                            <div className="flex items-center justify-center text-green-600">
+                              <CheckCircle size={16} className="mr-1" />
+                              <span>{uploadStatus.message}</span>
+                              {uploadStatus.hasOwnProperty('verified') && (
+                                <span className="ml-2">
+                                  {uploadStatus.verified 
+                                    ? '(Verificado)' 
+                                    : '(No verificado - puede que no sea accesible)'}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -295,11 +424,31 @@ const EventManager = () => {
                             disabled={uploadingImage}
                           />
                         </label>
+                        
+                        {/* Upload status message */}
+                        {uploadStatus.status && (
+                          <div className={`mt-4 p-2 rounded-lg ${
+                            uploadStatus.status === 'error' ? 'bg-red-50 text-red-600' :
+                            uploadStatus.status === 'success' ? 'bg-green-50 text-green-600' :
+                            'bg-blue-50 text-blue-600'
+                          }`}>
+                            <div className="flex items-center">
+                              {uploadStatus.status === 'error' ? (
+                                <AlertTriangle size={16} className="mr-1" />
+                              ) : uploadStatus.status === 'success' ? (
+                                <CheckCircle size={16} className="mr-1" />
+                              ) : (
+                                <span className="mr-1 inline-block h-4 w-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+                              )}
+                              <span>{uploadStatus.message}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* Categoría de imagen */}
+                  {/* Image category */}
                   <div>
                     <label className="flex items-center text-xl font-semibold mb-2 text-gray-700">
                       <Image size={20} className="mr-2 text-blue-600" />
@@ -326,7 +475,7 @@ const EventManager = () => {
                     </div>
                   </div>
                   
-                  {/* Información adicional */}
+                  {/* Additional information */}
                   <div>
                     <label className="flex items-center text-xl font-semibold mb-2 text-gray-700">
                       <Info size={20} className="mr-2 text-blue-600" />
@@ -342,13 +491,32 @@ const EventManager = () => {
                 </div>
               ) : (
                 <div className="mt-4">
-                  {/* Previsualización de la imagen */}
+                  {/* Image preview */}
                   {metadata[event.id]?.imagePath && (
                     <div className="mb-4">
                       <img 
                         src={metadata[event.id].imagePath} 
                         alt={event.title}
                         className="w-full max-w-md h-48 object-cover rounded-lg mx-auto"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const errorDiv = document.createElement('div');
+                          errorDiv.className = 'w-full max-w-md h-48 bg-red-50 rounded-lg flex items-center justify-center mx-auto';
+                          errorDiv.innerHTML = `
+                            <div class="text-center">
+                              <div class="flex justify-center mb-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
+                                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                </svg>
+                              </div>
+                              <p class="text-red-600">Error al cargar la imagen</p>
+                              <p class="text-red-600 text-sm">(Haga clic en Editar para resolver el problema)</p>
+                            </div>
+                          `;
+                          e.target.parentNode.appendChild(errorDiv);
+                        }}
                       />
                     </div>
                   )}
