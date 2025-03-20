@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit, Save, X, Image, Info, Upload, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
-import ImageWithFallback from './ImageWithFallback';
+import { Edit, Save, X, Image, Info, Upload, Trash2 } from 'lucide-react';
 
 const EventManager = () => {
   const [events, setEvents] = useState([]);
@@ -9,16 +8,7 @@ const EventManager = () => {
   const [editingEventId, setEditingEventId] = useState(null);
   const [metadata, setMetadata] = useState({});
   const [saving, setSaving] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadStatus, setUploadStatus] = useState({});
-
-  // Categories for event images
-  const categories = [
-    { value: 'bingo', label: 'Bingo' },
-    { value: 'walk', label: 'Paseo' },
-    { value: 'dance', label: 'Baile' },
-    { value: 'health', label: 'Salud' },
-  ];
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -60,7 +50,6 @@ const EventManager = () => {
 
   const handleEdit = (eventId) => {
     setEditingEventId(eventId);
-    // Reset upload status when starting to edit
     setUploadStatus({});
   };
 
@@ -96,16 +85,6 @@ const EventManager = () => {
     }
   };
 
-  const handleCategoryChange = (eventId, category) => {
-    setMetadata(prev => ({
-      ...prev,
-      [eventId]: {
-        ...prev[eventId],
-        imageCategory: category
-      }
-    }));
-  };
-
   const handleInfoChange = (eventId, info) => {
     setMetadata(prev => ({
       ...prev,
@@ -130,7 +109,6 @@ const EventManager = () => {
     }
 
     try {
-      setUploadingImage(true);
       setUploadStatus({
         status: 'uploading',
         message: 'Subiendo imagen...'
@@ -138,9 +116,6 @@ const EventManager = () => {
 
       const formData = new FormData();
       formData.append('image', file);
-
-      // Log what we're uploading to help debugging
-      console.log('Uploading file:', file.name, file.type, file.size);
       
       const response = await fetch(`/api/events/${eventId}/upload-image`, {
         method: 'POST',
@@ -166,14 +141,8 @@ const EventManager = () => {
 
       setUploadStatus({
         status: 'success',
-        message: 'Imagen subida con éxito',
-        path: imagePath
+        message: 'Imagen subida con éxito'
       });
-      
-      // Verify the image can be loaded
-      setTimeout(() => {
-        verifyImageExists(imagePath);
-      }, 1000);
 
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -181,34 +150,6 @@ const EventManager = () => {
         status: 'error',
         message: `Error al subir la imagen: ${error.message}`
       });
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  const verifyImageExists = async (imagePath) => {
-    try {
-      // For paths that aren't full URLs (local uploads)
-      const imageUrl = imagePath.startsWith('http') ? imagePath : imagePath;
-      
-      // Try to fetch the image to see if it exists
-      const imageResponse = await fetch(imageUrl, { method: 'HEAD' });
-      
-      if (!imageResponse.ok) {
-        throw new Error(`Image verification failed with status: ${imageResponse.status}`);
-      }
-      
-      setUploadStatus(prev => ({
-        ...prev,
-        verified: true
-      }));
-    } catch (error) {
-      console.error('Image verification failed:', error);
-      setUploadStatus(prev => ({
-        ...prev,
-        verified: false,
-        verifyError: error.message
-      }));
     }
   };
 
@@ -285,18 +226,8 @@ const EventManager = () => {
       
       <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
         <p className="text-xl text-gray-700 mb-4">
-          Aquí puede gestionar información adicional para cada evento, como imágenes personalizadas
-          y detalles que no están disponibles en Google Calendar.
+          Aquí puede gestionar información adicional para cada evento, como imágenes y detalles descriptivos.
         </p>
-        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-          <h3 className="text-lg font-semibold text-blue-800 mb-2">🛠️ Guía para subir imágenes</h3>
-          <ul className="list-disc pl-6 text-blue-700 space-y-1">
-            <li>Las imágenes deben ser menores a 5MB</li>
-            <li>Si usa S3, verifique que las credenciales sean correctas en .env</li>
-            <li>Si aparece 'Imagen subida con éxito' pero no se ve, revise los permisos de carpeta</li>
-            <li>El estado 'Verificado' confirma que la imagen es accesible</li>
-          </ul>
-        </div>
       </div>
       
       <div className="space-y-6">
@@ -351,7 +282,7 @@ const EventManager = () => {
               
               {editingEventId === event.id ? (
                 <div className="space-y-6 mt-4 bg-gray-50 p-4 rounded-lg">
-                  {/* Image upload */}
+                  {/* Simple image upload */}
                   <div>
                     <label className="flex items-center text-xl font-semibold mb-2 text-gray-700">
                       <Image size={20} className="mr-2 text-blue-600" />
@@ -361,12 +292,14 @@ const EventManager = () => {
                     {metadata[event.id]?.imagePath ? (
                       <div className="mb-4">
                         <div className="relative w-full max-w-md mx-auto">
-                          <ImageWithFallback
+                          <img
                             src={metadata[event.id].imagePath}
                             alt={event.title}
                             className="w-full h-48 object-cover rounded-lg"
-                            retryCount={3}
-                            retryDelay={2000}
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              alert('Error al cargar la imagen.');
+                            }}
                           />
                           <button
                             onClick={() => handleRemoveImage(event.id)}
@@ -376,22 +309,11 @@ const EventManager = () => {
                           </button>
                         </div>
                         
-                        {/* Image status indicator */}
-                        <div className="mt-2 text-center">
-                          {uploadStatus.status === 'success' && (
-                            <div className="flex items-center justify-center text-green-600">
-                              <CheckCircle size={16} className="mr-1" />
-                              <span>{uploadStatus.message}</span>
-                              {uploadStatus.hasOwnProperty('verified') && (
-                                <span className="ml-2">
-                                  {uploadStatus.verified 
-                                    ? '(Verificado)' 
-                                    : '(No verificado - puede que no sea accesible)'}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        {uploadStatus.status === 'success' && (
+                          <div className="mt-2 text-center text-green-600">
+                            {uploadStatus.message}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="flex flex-col items-center p-8 border-2 border-dashed border-gray-300 rounded-lg">
@@ -406,58 +328,21 @@ const EventManager = () => {
                             className="hidden"
                             accept="image/*"
                             onChange={(e) => handleImageUpload(event.id, e)}
-                            disabled={uploadingImage}
+                            disabled={uploadStatus.status === 'uploading'}
                           />
                         </label>
                         
-                        {/* Upload status message */}
                         {uploadStatus.status && (
                           <div className={`mt-4 p-2 rounded-lg ${
                             uploadStatus.status === 'error' ? 'bg-red-50 text-red-600' :
                             uploadStatus.status === 'success' ? 'bg-green-50 text-green-600' :
                             'bg-blue-50 text-blue-600'
                           }`}>
-                            <div className="flex items-center">
-                              {uploadStatus.status === 'error' ? (
-                                <AlertTriangle size={16} className="mr-1" />
-                              ) : uploadStatus.status === 'success' ? (
-                                <CheckCircle size={16} className="mr-1" />
-                              ) : (
-                                <span className="mr-1 inline-block h-4 w-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
-                              )}
-                              <span>{uploadStatus.message}</span>
-                            </div>
+                            {uploadStatus.message}
                           </div>
                         )}
                       </div>
                     )}
-                  </div>
-
-                  {/* Image category */}
-                  <div>
-                    <label className="flex items-center text-xl font-semibold mb-2 text-gray-700">
-                      <Image size={20} className="mr-2 text-blue-600" />
-                      Categoría de imagen predefinida
-                    </label>
-                    <p className="text-gray-500 mb-4">
-                      Si no sube una imagen personalizada, se utilizará la imagen de la categoría seleccionada.
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {categories.map(category => (
-                        <div 
-                          key={category.value}
-                          className={`
-                            p-3 border-2 rounded-lg cursor-pointer text-center
-                            ${metadata[event.id]?.imageCategory === category.value 
-                              ? 'border-blue-500 bg-blue-50' 
-                              : 'border-gray-200 hover:border-gray-300'}
-                          `}
-                          onClick={() => handleCategoryChange(event.id, category.value)}
-                        >
-                          {category.label}
-                        </div>
-                      ))}
-                    </div>
                   </div>
                   
                   {/* Additional information */}
@@ -476,29 +361,20 @@ const EventManager = () => {
                 </div>
               ) : (
                 <div className="mt-4">
-                  {/* Image preview */}
+                  {/* Simple image preview */}
                   {metadata[event.id]?.imagePath && (
                     <div className="mb-4">
-                      <ImageWithFallback
+                      <img
                         src={metadata[event.id].imagePath}
                         alt={event.title}
                         className="w-full max-w-md h-48 object-cover rounded-lg mx-auto"
-                        retryCount={3}
-                        retryDelay={2000}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
                       />
                     </div>
                   )}
                 
-                  <div className="flex items-center mb-2">
-                    <Image size={20} className="mr-2 text-blue-600" />
-                    <span className="text-lg font-semibold">Categoría:</span>
-                    <span className="ml-2 text-lg">
-                      {metadata[event.id]?.imageCategory 
-                        ? categories.find(c => c.value === metadata[event.id]?.imageCategory)?.label || metadata[event.id]?.imageCategory
-                        : 'No especificada'}
-                    </span>
-                  </div>
-                  
                   {metadata[event.id]?.additionalInfo && (
                     <div className="mt-2">
                       <div className="flex items-start">
