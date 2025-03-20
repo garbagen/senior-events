@@ -111,17 +111,19 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && proces
   console.log('Using disk storage (S3 not configured)');
 }
 
-const upload = multer({ 
-  storage,
+const upload = multer({
+  storage: multer.memoryStorage(), // Always use memory storage for consistency
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+    files: 1 // Only allow one file at a time
+  },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    // Only accept common image formats
+    if (file.mimetype.match(/^image\/(jpeg|png|gif|webp|svg\+xml)$/)) {
       cb(null, true);
     } else {
-      cb(new Error('El archivo debe ser una imagen'), false);
+      cb(new Error('Solo se permiten archivos de imagen (JPEG, PNG, GIF, WEBP, SVG)'), false);
     }
-  },
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
 
@@ -370,6 +372,9 @@ app.post('/api/events/:eventId/metadata', async (req, res) => {
  * - Detailed logging for troubleshooting
  */
 app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req, res) => {
+  let imagePath = null;
+  let fallbackUsed = false;
+  
   try {
     const { eventId } = req.params;
     
@@ -377,140 +382,87 @@ app.post('/api/events/:eventId/upload-image', upload.single('image'), async (req
       return res.status(400).json({ error: 'No se ha subido ninguna imagen' });
     }
     
-    console.log('Received upload request for event:', eventId);
-    console.log('File details:', {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      path: req.file.path || 'Using memory storage',
-      buffer: req.file.buffer ? 'Buffer present' : 'No buffer'
-    });
+    console.log('Procesando carga de imagen para evento:', eventId);
     
-    let imagePath;
+    // Check if we have valid S3 configuration
+    const s3ConfigValid = process.env.AWS_ACCESS_KEY_ID && 
+                          process.env.AWS_SECRET_ACCESS_KEY && 
+                          process.env.S3_BUCKET_NAME;
     
-    // Check for S3 configuration
-    if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.S3_BUCKET_NAME) {
-      console.log('Using S3 storage');
+    // Try S3 upload first if configured
+    if (s3ConfigValid) {
       try {
-        // Import the S3 storage module
-        let uploadToS3;
-        try {
-          const s3Storage = await import('./s3Storage.js');
-          uploadToS3 = s3Storage.uploadFile;
-          console.log('S3 storage module loaded successfully');
-        } catch (importError) {
-          console.error('Error importing S3 storage module:', importError);
-          throw new Error('S3 module import failed: ' + importError.message);
-        }
-        
-        // Ensure we have the file buffer
-        let fileBuffer;
-        if (req.file.buffer) {
-          fileBuffer = req.file.buffer;
-          console.log('Using buffer from memory storage');
-        } else if (req.file.path) {
-          try {
-            fileBuffer = await fs.readFile(req.file.path);
-            console.log('Successfully read file from disk');
-          } catch (readError) {
-            console.error('Error reading file from disk:', readError);
-            throw new Error('Failed to read uploaded file from disk');
-          }
-        } else {
-          throw new Error('No file buffer or path available');
-        }
+        // Import the S3 module dynamically
+        const s3Module = await import('./s3Storage.js');
         
         // Upload to S3
-        try {
-          imagePath = await uploadToS3({
-            buffer: fileBuffer,
-            originalname: req.file.originalname,
-            mimetype: req.file.mimetype
-          });
-          
-          console.log('File uploaded to S3:', imagePath);
-          
-          // If we have a local file, remove it (in case of disk storage)
-          if (req.file.path) {
-            try {
-              await fs.unlink(req.file.path);
-              console.log('Local file deleted after S3 upload');
-            } catch (unlinkError) {
-              console.error('Error deleting local file:', unlinkError);
-              // Continue anyway since the S3 upload was successful
-            }
-          }
-        } catch (s3Error) {
-          console.error('Error uploading to S3:', s3Error);
-          // If S3 upload fails, let's fall back to local storage if we have a path
-          if (req.file.path) {
-            console.log('S3 upload failed, falling back to local storage');
-            imagePath = `/uploads/events/${path.basename(req.file.path)}`;
-          } else {
-            throw new Error('S3 upload failed and no local fallback available: ' + s3Error.message);
-          }
-        }
-      } catch (error) {
-        console.error('Error in S3 upload process:', error);
-        
-        // If we hit an error in the S3 upload process but have a local file, use that as fallback
-        if (req.file.path) {
-          console.log('Error in S3 process, falling back to local storage');
-          imagePath = `/uploads/events/${path.basename(req.file.path)}`;
-        } else {
-          throw error; // Re-throw the error if we can't fall back
-        }
+        imagePath = await s3Module.uploadFile(req.file);
+        console.log('Imagen subida con éxito a S3:', imagePath);
+      } catch (s3Error) {
+        console.error('Error en la carga a S3, usando almacenamiento local:', s3Error);
+        fallbackUsed = true;
+        // Fall through to local storage
       }
     } else {
-      // Use local storage if S3 is not configured
-      console.log('S3 not configured, using local storage');
-      
-      if (!req.file.path) {
-        throw new Error('No file path available for local storage');
-      }
-      
-      imagePath = `/uploads/events/${path.basename(req.file.path)}`;
-      console.log('Using local storage path:', imagePath);
-      
-      // Verify the file exists in the local filesystem
+      console.log('S3 no configurado, usando almacenamiento local');
+      fallbackUsed = true;
+    }
+    
+    // Fallback to local storage if S3 upload failed or not configured
+    if (!imagePath) {
       try {
-        await fs.access(path.join(__dirname, 'public', imagePath));
-        console.log('Verified local file exists at:', path.join(__dirname, 'public', imagePath));
-      } catch (accessError) {
-        console.error('Warning: Could not verify local file exists:', accessError);
-        // Continue anyway, as the file might be accessible from the web
+        // Create uploads directory if it doesn't exist
+        const uploadDir = path.join(__dirname, 'public', 'uploads', 'events');
+        await fs.mkdir(uploadDir, { recursive: true });
+        
+        // Generate a unique filename
+        const uniqueFilename = `${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '')}`;
+        const filePath = path.join(uploadDir, uniqueFilename);
+        
+        // Write the file to disk
+        await fs.writeFile(filePath, req.file.buffer);
+        
+        // Set the image path to be served from the local server
+        imagePath = `/uploads/events/${uniqueFilename}`;
+        console.log('Imagen guardada localmente:', imagePath);
+      } catch (localError) {
+        console.error('Error guardando archivo localmente:', localError);
+        throw new Error(`No se pudo guardar la imagen localmente: ${localError.message}`);
       }
     }
     
-    // Update the event metadata with the image path
-    const allMetadata = await readJsonFile(METADATA_FILE, {});
-    
-    allMetadata[eventId] = {
-      ...(allMetadata[eventId] || {}),
-      imagePath,
-      lastUpdated: new Date().toISOString()
-    };
-    
-    await writeJsonFile(METADATA_FILE, allMetadata);
-    
-    // Return success response
-    res.status(200).json({ 
-      success: true, 
-      message: 'Imagen subida con éxito',
-      imagePath
-    });
+    // Update the event metadata with the new image path
+    if (imagePath) {
+      const allMetadata = await readJsonFile(METADATA_FILE, {});
+      
+      allMetadata[eventId] = {
+        ...(allMetadata[eventId] || {}),
+        imagePath,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await writeJsonFile(METADATA_FILE, allMetadata);
+      
+      // Return success with the image path
+      return res.status(200).json({ 
+        success: true,
+        message: fallbackUsed ? 
+          'Imagen subida con éxito (usando almacenamiento local)' : 
+          'Imagen subida con éxito',
+        imagePath,
+        storageType: fallbackUsed ? 'local' : 's3'
+      });
+    } else {
+      throw new Error('No se pudo obtener una ruta de imagen válida');
+    }
   } catch (error) {
     console.error('Error subiendo imagen:', error);
-    // Provide more detailed error response
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Error al subir la imagen',
-      message: error.message,
-      // Don't include stack trace in production, but useful for debugging
-      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+      message: error.message
     });
   }
 });
-
 // For SPA routing, return the main index.html for any unmatched route
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));

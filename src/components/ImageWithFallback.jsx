@@ -1,24 +1,32 @@
 // src/components/ImageWithFallback.jsx
-import React, { useState, useEffect } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { AlertTriangle, RefreshCw, Image as ImageIcon } from 'lucide-react';
 
 const ImageWithFallback = ({ 
   src, 
   alt, 
   className = '', 
   fallbackClassName = '',
-  retryCount = 2,
+  retryCount = 3,
   retryDelay = 1500,
   onError = () => {},
-  onLoad = () => {} 
+  onLoad = () => {},
+  placeholder = null
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retries, setRetries] = useState(0);
-  const [imgSrc, setImgSrc] = useState(src);
+  const [imgSrc, setImgSrc] = useState('');
+  const imageRef = useRef(null);
   
   // Reset state when src changes
   useEffect(() => {
+    if (!src) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+    
     setImgSrc(src);
     setLoading(true);
     setError(false);
@@ -27,18 +35,43 @@ const ImageWithFallback = ({
   
   // Handle automatic retry
   useEffect(() => {
+    let timer;
     if (error && retries < retryCount) {
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         console.log(`Retrying image load (${retries + 1}/${retryCount}): ${src}`);
-        setImgSrc(`${src}?retry=${Date.now()}`); // Add cache-busting parameter
+        // Add cache-busting parameter and append current time to force a fresh attempt
+        setImgSrc(`${src}${src.includes('?') ? '&' : '?'}retry=${Date.now()}`);
         setLoading(true);
         setError(false);
-        setRetries(retries + 1);
+        setRetries(prev => prev + 1);
       }, retryDelay);
-      
-      return () => clearTimeout(timer);
     }
+    
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [error, retries, retryCount, retryDelay, src]);
+  
+  // Preload image to check if it exists
+  useEffect(() => {
+    if (!imgSrc) return;
+    
+    const img = new Image();
+    img.onload = () => {
+      setLoading(false);
+      setError(false);
+    };
+    img.onerror = () => {
+      setLoading(false);
+      setError(true);
+    };
+    img.src = imgSrc;
+    
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [imgSrc]);
   
   const handleError = () => {
     console.error(`Failed to load image: ${imgSrc}`);
@@ -54,22 +87,45 @@ const ImageWithFallback = ({
   };
   
   const handleRetry = () => {
+    if (retries >= retryCount) {
+      // Reset retry count when manually retrying after max auto-retries
+      setRetries(0);
+    }
     setImgSrc(`${src}?retry=${Date.now()}`);
     setLoading(true);
     setError(false);
   };
   
+  // If we have a placeholder and the image is errored, show placeholder
+  if (error && placeholder) {
+    return placeholder;
+  }
+  
+  // Default placeholder if none provided
+  const defaultPlaceholder = (
+    <div className={`flex items-center justify-center bg-blue-50 ${fallbackClassName || className}`}>
+      <div className="text-center">
+        <ImageIcon size={48} className="mx-auto mb-2 text-blue-300" />
+        <p className="text-lg text-blue-500">{alt}</p>
+      </div>
+    </div>
+  );
+  
   return (
     <div className="relative">
       {/* Actual image */}
-      <img
-        src={imgSrc}
-        alt={alt}
-        className={`${className} ${loading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
-        style={{ display: error ? 'none' : 'block' }}
-        onError={handleError}
-        onLoad={handleLoad}
-      />
+      {imgSrc && (
+        <img
+          ref={imageRef}
+          src={imgSrc}
+          alt={alt}
+          className={`${className} ${loading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+          style={{ display: error ? 'none' : 'block' }}
+          onError={handleError}
+          onLoad={handleLoad}
+          loading="lazy"
+        />
+      )}
       
       {/* Loading indicator */}
       {loading && !error && (
@@ -96,6 +152,9 @@ const ImageWithFallback = ({
           </div>
         </div>
       )}
+      
+      {/* Show placeholder/fallback when no image is provided */}
+      {!imgSrc && defaultPlaceholder}
     </div>
   );
 };

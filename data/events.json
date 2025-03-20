@@ -1,0 +1,26 @@
+[
+  {
+    "id": "event-1",
+    "title": "Taller de Pintura",
+    "description": "Taller para aprender técnicas básicas de pintura. Materiales incluidos.",
+    "location": "Centro Comunitario, Sala 2",
+    "date": "2025-03-22T22:40:25.757Z",
+    "endDate": "2025-03-23T00:40:25.758Z"
+  },
+  {
+    "id": "event-2",
+    "title": "Bingo Social",
+    "description": "Tarde de bingo con premios y refrigerios. ¡Todos son bienvenidos!",
+    "location": "Salón Principal",
+    "date": "2025-03-25T22:40:25.758Z",
+    "endDate": "2025-03-26T01:40:25.758Z"
+  },
+  {
+    "id": "event-3",
+    "title": "Paseo al Parque",
+    "description": "Caminata guiada por el parque municipal. Se recomienda ropa cómoda.",
+    "location": "Entrada del Parque Municipal",
+    "date": "2025-03-27T22:40:25.758Z",
+    "endDate": "2025-03-28T00:40:25.758Z"
+  }
+]
