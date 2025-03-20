@@ -4,8 +4,16 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'media', // Enables dark mode based on system preferences
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        primary: {
+          DEFAULT: '#1877F2', // Facebook blue
+          dark: '#1153ab',
+        }
+      },
+    },
   },
   plugins: [],
 }

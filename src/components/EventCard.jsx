@@ -141,14 +141,14 @@ const EventCard = ({ event, onResponseChange }) => {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
       {/* Event Image */}
-      <div className="w-full h-48 relative bg-gray-200">
+      <div className="w-full h-48 relative bg-gray-200 dark:bg-gray-700">
         {imageError ? (
-          <div className="flex items-center justify-center h-full bg-blue-50">
+          <div className="flex items-center justify-center h-full bg-blue-50 dark:bg-blue-900">
             <div className="text-center">
               <ImageIcon size={48} className="mx-auto mb-2 text-blue-300" />
-              <p className="text-lg text-blue-500">{event.title}</p>
+              <p className="text-lg text-blue-500 dark:text-blue-300">{event.title}</p>
             </div>
           </div>
         ) : (
@@ -162,37 +162,37 @@ const EventCard = ({ event, onResponseChange }) => {
       </div>
 
       <div className="p-8">
-        <h2 className="text-4xl font-bold text-gray-900 mb-6">{event.title}</h2>
+        <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-6">{event.title}</h2>
         
         <div className="space-y-4">
           <div className="flex flex-col text-xl">
             <div className="mb-4">
-              <span className="font-semibold text-gray-700">Fecha: </span>
-              <span className="text-gray-900">
+              <span className="font-semibold text-gray-700 dark:text-gray-300">Fecha: </span>
+              <span className="text-gray-900 dark:text-white">
                 {format(new Date(event.date), "EEEE dd 'de' MMMM 'de' yyyy", { locale: es })}
               </span>
             </div>
             
             <div className="mb-4">
-              <span className="font-semibold text-gray-700">Hora: </span>
-              <span className="text-gray-900">
+              <span className="font-semibold text-gray-700 dark:text-gray-300">Hora: </span>
+              <span className="text-gray-900 dark:text-white">
                 {format(new Date(event.date), 'h:mm a', { locale: es })}
               </span>
             </div>
             
             <div className="mb-4">
-              <span className="font-semibold text-gray-700">Lugar: </span>
-              <span className="text-gray-900">{event.location}</span>
+              <span className="font-semibold text-gray-700 dark:text-gray-300">Lugar: </span>
+              <span className="text-gray-900 dark:text-white">{event.location}</span>
             </div>
           </div>
           
-          <p className="text-xl text-gray-700 mt-4">{event.description}</p>
+          <p className="text-xl text-gray-700 dark:text-gray-300 mt-4">{event.description}</p>
           
           {/* Información adicional de los metadatos */}
           {eventMetadata?.additionalInfo && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-2xl font-semibold text-blue-800 mb-2">Información adicional:</h3>
-              <p className="text-xl text-gray-700">{eventMetadata.additionalInfo}</p>
+            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+              <h3 className="text-2xl font-semibold text-blue-800 dark:text-blue-300 mb-2">Información adicional:</h3>
+              <p className="text-xl text-gray-700 dark:text-gray-300">{eventMetadata.additionalInfo}</p>
             </div>
           )}
         </div>
@@ -207,8 +207,8 @@ const EventCard = ({ event, onResponseChange }) => {
                 transition-all duration-200
                 ${submitting ? 'opacity-50 cursor-not-allowed' : ''}
                 ${vote === 'yes' 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+                  ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' 
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}
               `}
             >
               <ThumbsUp size={48} strokeWidth={2.5} />
@@ -223,8 +223,8 @@ const EventCard = ({ event, onResponseChange }) => {
                 transition-all duration-200
                 ${submitting ? 'opacity-50 cursor-not-allowed' : ''}
                 ${vote === 'no' 
-                  ? 'bg-red-100 text-red-700' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+                  ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300' 
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}
               `}
             >
               <ThumbsDown size={48} strokeWidth={2.5} />
@@ -234,7 +234,7 @@ const EventCard = ({ event, onResponseChange }) => {
 
           {vote && (
             <div className="text-center">
-              <p className="text-xl font-semibold text-gray-700">
+              <p className="text-xl font-semibold text-gray-700 dark:text-gray-300">
                 {vote === 'yes' 
                   ? "¡Gracias por tu respuesta positiva!" 
                   : "¡Gracias por tu respuesta!"}
@@ -242,7 +242,7 @@ const EventCard = ({ event, onResponseChange }) => {
             </div>
           )}
 
-          <div className="border-t border-gray-200 pt-8">
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-8">
             <AudioRecorder />
           </div>
         </div>
