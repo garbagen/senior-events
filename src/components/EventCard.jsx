@@ -26,6 +26,7 @@ const LOCATION_IMAGE_MAP = {
 
 const getEventImage = async (event) => {
   try {
+<<<<<<< HEAD
     // Try to get the image path from metadata first
     const metadataResponse = await fetch(`/api/events/${event.id}/metadata`);
     if (!metadataResponse.ok) {
@@ -41,6 +42,27 @@ const getEventImage = async (event) => {
         fromMetadata: true,
         category: metadata.imageCategory || null
       };
+=======
+    // Primero intentar obtener la imagen personalizada de los metadatos
+    const response = await fetch(`/api/events/${event.id}/metadata`);
+    const metadata = await response.json();
+    
+    // Check if we have a custom image path
+    if (metadata?.imagePath) {
+      // Check if image exists (for remote S3 images we'll assume they exist)
+      if (metadata.imagePath.startsWith('http')) {
+        return metadata.imagePath;
+      } else {
+        // For local images, we should verify they exist but it's tricky in the frontend
+        // Let's just return and let the img element's error handler catch it
+        return metadata.imagePath;
+      }
+    }
+    
+    // If no custom image, try to use category from metadata
+    if (metadata?.imageCategory) {
+      return IMAGE_CATEGORY_MAP[metadata.imageCategory] || DEFAULT_IMAGE;
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
     }
     
     // If no custom image, use category from metadata
@@ -57,6 +79,7 @@ const getEventImage = async (event) => {
                          event.description?.match(/#CATEGORY:(\w+)/);
     
     if (categoryMatch && categoryMatch[1] && IMAGE_CATEGORY_MAP[categoryMatch[1]]) {
+<<<<<<< HEAD
       return {
         src: IMAGE_CATEGORY_MAP[categoryMatch[1]],
         fromDescription: true,
@@ -90,40 +113,79 @@ const getEventImage = async (event) => {
       isDefault: true,
       error
     };
+=======
+      return IMAGE_CATEGORY_MAP[categoryMatch[1]];
+    }
+    
+    // Try to get image based on location
+    if (event.location && LOCATION_IMAGE_MAP[event.location]) {
+      return LOCATION_IMAGE_MAP[event.location];
+    }
+    
+    // Default fallback
+    return DEFAULT_IMAGE;
+  } catch (error) {
+    console.error('Error getting event image:', error);
+    return DEFAULT_IMAGE;
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
   }
 };
 
 const EventCard = ({ event, onResponseChange }) => {
   const [vote, setVote] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+<<<<<<< HEAD
   const [eventImage, setEventImage] = useState({ src: DEFAULT_IMAGE, isDefault: true })
+=======
+  const [eventImage, setEventImage] = useState(DEFAULT_IMAGE)
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
   const [eventMetadata, setEventMetadata] = useState(null)
   const [imageError, setImageError] = useState(false)
   
   useEffect(() => {
+<<<<<<< HEAD
     const loadEventData = async () => {
+=======
+    const loadEventImage = async () => {
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
       try {
         // Reset image error state
         setImageError(false);
         
+<<<<<<< HEAD
         // Get image information
         const imageInfo = await getEventImage(event);
         setEventImage(imageInfo);
+=======
+        // Get image URL
+        const imageSrc = await getEventImage(event);
+        setEventImage(imageSrc);
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
         
         // Also load metadata for additional info
         try {
           const metadataResponse = await fetch(`/api/events/${event.id}/metadata`);
+<<<<<<< HEAD
           if (metadataResponse.ok) {
             const metadataData = await metadataResponse.json();
             setEventMetadata(metadataData);
           }
+=======
+          const metadataData = await metadataResponse.json();
+          setEventMetadata(metadataData);
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
         } catch (metadataError) {
           console.error('Error loading event metadata:', metadataError);
         }
       } catch (error) {
+<<<<<<< HEAD
         console.error('Error in loadEventData:', error);
         setImageError(true);
         setEventImage({ src: DEFAULT_IMAGE, isDefault: true, error });
+=======
+        console.error('Error in loadEventImage:', error);
+        setEventImage(DEFAULT_IMAGE);
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
       }
     };
     
@@ -131,8 +193,14 @@ const EventCard = ({ event, onResponseChange }) => {
   }, [event]);
 
   const handleImageError = () => {
+<<<<<<< HEAD
     // If the image fails to load, set error state
     setImageError(true);
+=======
+    // If the image fails to load, set error state and use default image
+    setImageError(true);
+    setEventImage(DEFAULT_IMAGE);
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
   };
 
   const handleVote = async (newVote) => {
@@ -184,17 +252,32 @@ const EventCard = ({ event, onResponseChange }) => {
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden">
       {/* Event Image */}
+<<<<<<< HEAD
       <div className="w-full h-48 relative bg-gray-200 overflow-hidden">
         {imageError ? (
           customPlaceholder
         ) : (
           <ImageWithFallback
             src={eventImage.src}
+=======
+      <div className="w-full h-48 relative bg-gray-200">
+        {imageError ? (
+          <div className="flex items-center justify-center h-full bg-blue-50">
+            <div className="text-center">
+              <ImageIcon size={48} className="mx-auto mb-2 text-blue-300" />
+              <p className="text-lg text-blue-500">{event.title}</p>
+            </div>
+          </div>
+        ) : (
+          <ImageWithFallback
+            src={eventImage}
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
             alt={`Imagen para ${event.title}`}
             className="w-full h-full object-cover"
             onError={handleImageError}
             retryCount={3}
             retryDelay={2000}
+<<<<<<< HEAD
             placeholder={customPlaceholder}
           />
         )}
@@ -205,6 +288,10 @@ const EventCard = ({ event, onResponseChange }) => {
             {eventImage.category}
           </div>
         )}
+=======
+          />
+        )}
+>>>>>>> 28408cf9c058d9ae0b7cac6cf8c8d37521ca8064
       </div>
 
       <div className="p-8">
