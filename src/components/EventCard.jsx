@@ -6,50 +6,49 @@ import AudioRecorder from './AudioRecorder'
 import { calendarService } from '../services/calendarService'
 import ImageWithFallback from './ImageWithFallback'
 
-// Default image if none is available
-const DEFAULT_IMAGE = '/images/events/default.jpg';
+// Built-in SVG data URL for default image - this avoids the need for external files
+const DEFAULT_IMAGE_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23f3f4f6'/%3E%3Cpath d='M400 150 L600 450 L200 450 Z' fill='%23e5e7eb'/%3E%3Ccircle cx='600' cy='150' r='80' fill='%23fcd34d'/%3E%3C/svg%3E`;
 
-// Fallback category images
+// Fallback category images - using inline SVG data URLs to avoid external file dependencies
 const IMAGE_CATEGORY_MAP = {
-  'bingo': '/images/events/bingo.jpg',
-  'walk': '/images/events/walking.jpg',
-  'dance': '/images/events/dance.jpg',
-  'health': '/images/events/health.jpg'
+  'bingo': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23fee2e2'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='72' fill='%23ef4444' text-anchor='middle'%3EBINGO%3C/text%3E%3C/svg%3E`,
+  'walk': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23ecfdf5'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='72' fill='%2310b981' text-anchor='middle'%3EPASEO%3C/text%3E%3C/svg%3E`,
+  'dance': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23ede9fe'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='72' fill='%238b5cf6' text-anchor='middle'%3EBAILE%3C/text%3E%3C/svg%3E`,
+  'health': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23dbeafe'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='72' fill='%232563eb' text-anchor='middle'%3ESALUD%3C/text%3E%3C/svg%3E`
 };
 
-// Fallback location images
+// Fallback location images - using inline SVG data URLs
 const LOCATION_IMAGE_MAP = {
-  'Community Center': '/images/locations/community-center.jpg',
-  'City Park': '/images/locations/city-park.jpg',
-  'Sports Complex': '/images/locations/sports-complex.jpg'
+  'Centro Comunitario': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23f0fdf4'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='48' fill='%2316a34a' text-anchor='middle'%3ECENTRO COMUNITARIO%3C/text%3E%3C/svg%3E`,
+  'Parque': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23ecfdf5'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='72' fill='%2310b981' text-anchor='middle'%3EPARQUE%3C/text%3E%3C/svg%3E`,
+  'Salón': `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23fff7ed'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='72' fill='%23f97316' text-anchor='middle'%3ESALÓN%3C/text%3E%3C/svg%3E`
 };
 
 const getEventImage = async (event) => {
   try {
     // Try to get the image path from metadata first
-    console.log(`Fetching metadata for event ${event.id}`);
     const metadataResponse = await fetch(`/api/events/${event.id}/metadata`);
     if (!metadataResponse.ok) {
-      console.error(`Metadata fetch failed with status: ${metadataResponse.status}`);
       throw new Error('Failed to fetch metadata');
     }
     
     const metadata = await metadataResponse.json();
-    console.log('Metadata received:', metadata);
     
     // Check if we have a custom image path
     if (metadata?.imagePath) {
-      console.log(`Found custom image path: ${metadata.imagePath}`);
-      return {
-        src: metadata.imagePath,
-        fromMetadata: true,
-        category: metadata.imageCategory || null
-      };
+      // Only use imagePath if it's not a local path that might not exist
+      // or if it's an absolute URL (starts with http or https)
+      if (metadata.imagePath.startsWith('http') || metadata.imagePath.startsWith('/uploads/')) {
+        return {
+          src: metadata.imagePath,
+          fromMetadata: true,
+          category: metadata.imageCategory || null
+        };
+      }
     }
     
     // If no custom image, use category from metadata
     if (metadata?.imageCategory && IMAGE_CATEGORY_MAP[metadata.imageCategory]) {
-      console.log(`Using category image for: ${metadata.imageCategory}`);
       return {
         src: IMAGE_CATEGORY_MAP[metadata.imageCategory],
         fromMetadata: true,
@@ -58,13 +57,11 @@ const getEventImage = async (event) => {
     }
     
     // Fallback to category from description
-    console.log('Checking description for category');
     const categoryMatch = event.description?.match(/\[CATEGORY:\s*(\w+)\]/) || 
                          event.description?.match(/#CATEGORY:(\w+)/);
     
     if (categoryMatch && categoryMatch[1] && IMAGE_CATEGORY_MAP[categoryMatch[1]]) {
       const category = categoryMatch[1];
-      console.log(`Found category in description: ${category}`);
       return {
         src: IMAGE_CATEGORY_MAP[category],
         fromDescription: true,
@@ -74,11 +71,9 @@ const getEventImage = async (event) => {
     
     // Try to get image based on location
     if (event.location) {
-      console.log(`Checking location: ${event.location}`);
-      // Check for exact location match
+      // Check for location matches
       for (const [locationKey, imagePath] of Object.entries(LOCATION_IMAGE_MAP)) {
-        if (event.location.includes(locationKey)) {
-          console.log(`Found location match: ${locationKey}`);
+        if (event.location.toLowerCase().includes(locationKey.toLowerCase())) {
           return {
             src: imagePath,
             fromLocation: true,
@@ -88,16 +83,15 @@ const getEventImage = async (event) => {
       }
     }
     
-    // Default fallback
-    console.log('No image found, using default');
+    // Default fallback - use the SVG data URL
     return {
-      src: DEFAULT_IMAGE,
+      src: DEFAULT_IMAGE_SVG,
       isDefault: true
     };
   } catch (error) {
     console.error('Error getting event image:', error);
     return {
-      src: DEFAULT_IMAGE,
+      src: DEFAULT_IMAGE_SVG,
       isDefault: true,
       error
     };
@@ -107,7 +101,7 @@ const getEventImage = async (event) => {
 const EventCard = ({ event, onResponseChange }) => {
   const [vote, setVote] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [eventImage, setEventImage] = useState({ src: DEFAULT_IMAGE, isDefault: true })
+  const [eventImage, setEventImage] = useState({ src: DEFAULT_IMAGE_SVG, isDefault: true })
   const [eventMetadata, setEventMetadata] = useState(null)
   const [imageError, setImageError] = useState(false)
   
@@ -117,48 +111,24 @@ const EventCard = ({ event, onResponseChange }) => {
         // Reset image error state
         setImageError(false);
         
-        console.log("--- Event Image Debug Start ---");
-        console.log("Event ID:", event.id);
-        console.log("Event Title:", event.title);
-        
         // Get image information
-        console.log("Fetching image info...");
         const imageInfo = await getEventImage(event);
-        console.log("Image info result:", imageInfo);
-        
-        // TEST: Verify the image exists by fetching it
-        if (imageInfo.src) {
-          console.log(`Testing if image exists at: ${imageInfo.src}`);
-          try {
-            const testFetch = await fetch(imageInfo.src, { method: 'HEAD' }).catch(e => ({ ok: false, error: e }));
-            console.log(`Image fetch test result: ${testFetch.ok ? 'Success' : 'Failed'}`);
-          } catch (fetchError) {
-            console.error("Image fetch test error:", fetchError);
-          }
-        }
-        
         setEventImage(imageInfo);
         
         // Also load metadata for additional info
         try {
-          console.log("Fetching metadata...");
           const metadataResponse = await fetch(`/api/events/${event.id}/metadata`);
           if (metadataResponse.ok) {
             const metadataData = await metadataResponse.json();
-            console.log("Metadata result:", metadataData);
             setEventMetadata(metadataData);
-          } else {
-            console.log("Metadata fetch failed with status:", metadataResponse.status);
           }
         } catch (metadataError) {
           console.error('Error loading event metadata:', metadataError);
         }
-        
-        console.log("--- Event Image Debug End ---");
       } catch (error) {
         console.error('Error in loadEventData:', error);
         setImageError(true);
-        setEventImage({ src: DEFAULT_IMAGE, isDefault: true, error });
+        setEventImage({ src: DEFAULT_IMAGE_SVG, isDefault: true, error });
       }
     };
     
@@ -166,9 +136,10 @@ const EventCard = ({ event, onResponseChange }) => {
   }, [event]);
 
   const handleImageError = () => {
-    // If the image fails to load, set error state
-    console.error(`Image failed to load: ${eventImage.src}`);
+    // If the image fails to load, set error state and use default image
+    console.warn(`Image failed to load: ${eventImage.src}`);
     setImageError(true);
+    setEventImage(prev => ({ ...prev, src: DEFAULT_IMAGE_SVG, hasError: true }));
   };
 
   const handleVote = async (newVote) => {
@@ -229,8 +200,8 @@ const EventCard = ({ event, onResponseChange }) => {
             alt={`Imagen para ${event.title}`}
             className="w-full h-full object-cover"
             onError={handleImageError}
-            retryCount={3}
-            retryDelay={2000}
+            retryCount={2}
+            retryDelay={1000}
             placeholder={customPlaceholder}
           />
         )}
@@ -241,14 +212,6 @@ const EventCard = ({ event, onResponseChange }) => {
             {eventImage.category}
           </div>
         )}
-        
-        {/* Debug info badge */}
-        <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-          Source: {eventImage.isDefault ? 'Default' : 
-                  eventImage.fromMetadata ? 'Metadata' : 
-                  eventImage.fromDescription ? 'Description' : 
-                  eventImage.fromLocation ? 'Location' : 'Unknown'}
-        </div>
       </div>
 
       <div className="p-8">
@@ -285,24 +248,6 @@ const EventCard = ({ event, onResponseChange }) => {
               <p className="text-xl text-gray-700">{eventMetadata.additionalInfo}</p>
             </div>
           )}
-          
-          {/* Image source debugging info */}
-          <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <h3 className="text-lg font-semibold text-yellow-800 mb-2">Debug Info:</h3>
-            <p className="text-sm text-yellow-700">Image Source: {eventImage.src}</p>
-            <p className="text-sm text-yellow-700">
-              Type: {eventImage.isDefault ? 'Default' : 
-                    eventImage.fromMetadata ? 'Metadata' : 
-                    eventImage.fromDescription ? 'Description' : 
-                    eventImage.fromLocation ? 'Location' : 'Unknown'}
-            </p>
-            {eventImage.category && 
-              <p className="text-sm text-yellow-700">Category: {eventImage.category}</p>
-            }
-            {eventImage.error && 
-              <p className="text-sm text-red-700">Error: {eventImage.error.message}</p>
-            }
-          </div>
         </div>
 
         <div className="mt-8 flex flex-col gap-8">
