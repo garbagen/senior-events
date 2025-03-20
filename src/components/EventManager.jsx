@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Edit, Save, X, Image, Info, Upload, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
+import ImageWithFallback from './ImageWithFallback';
 
 const EventManager = () => {
   const [events, setEvents] = useState([]);
@@ -360,28 +361,12 @@ const EventManager = () => {
                     {metadata[event.id]?.imagePath ? (
                       <div className="mb-4">
                         <div className="relative w-full max-w-md mx-auto">
-                          <img 
-                            src={metadata[event.id].imagePath} 
+                          <ImageWithFallback
+                            src={metadata[event.id].imagePath}
                             alt={event.title}
                             className="w-full h-48 object-cover rounded-lg"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              const errorDiv = document.createElement('div');
-                              errorDiv.className = 'w-full h-48 bg-red-50 rounded-lg flex items-center justify-center';
-                              errorDiv.innerHTML = `
-                                <div class="text-center">
-                                  <div class="flex justify-center mb-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
-                                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                      <line x1="12" y1="9" x2="12" y2="13"></line>
-                                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                    </svg>
-                                  </div>
-                                  <p class="text-red-600">Error al cargar la imagen</p>
-                                </div>
-                              `;
-                              e.target.parentNode.appendChild(errorDiv);
-                            }}
+                            retryCount={3}
+                            retryDelay={2000}
                           />
                           <button
                             onClick={() => handleRemoveImage(event.id)}
@@ -494,29 +479,12 @@ const EventManager = () => {
                   {/* Image preview */}
                   {metadata[event.id]?.imagePath && (
                     <div className="mb-4">
-                      <img 
-                        src={metadata[event.id].imagePath} 
+                      <ImageWithFallback
+                        src={metadata[event.id].imagePath}
                         alt={event.title}
                         className="w-full max-w-md h-48 object-cover rounded-lg mx-auto"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const errorDiv = document.createElement('div');
-                          errorDiv.className = 'w-full max-w-md h-48 bg-red-50 rounded-lg flex items-center justify-center mx-auto';
-                          errorDiv.innerHTML = `
-                            <div class="text-center">
-                              <div class="flex justify-center mb-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
-                                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                </svg>
-                              </div>
-                              <p class="text-red-600">Error al cargar la imagen</p>
-                              <p class="text-red-600 text-sm">(Haga clic en Editar para resolver el problema)</p>
-                            </div>
-                          `;
-                          e.target.parentNode.appendChild(errorDiv);
-                        }}
+                        retryCount={3}
+                        retryDelay={2000}
                       />
                     </div>
                   )}
