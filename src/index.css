@@ -6,8 +6,6 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
   
   /* Light mode colors */
   --color-text: #213547;
@@ -21,18 +19,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Dark mode colors */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-text: rgba(255, 255, 255, 0.87);
-    --color-background: #1e293b;
-    --color-card-background: #334155;
-    --color-card-text: #f3f4f6;
-    --color-primary: #3b82f6;
-    --color-secondary: #475569;
-  }
 }
 
 body {
@@ -56,20 +42,20 @@ p {
   color: var(--color-text);
 }
 
-/* Custom classes for dark mode compatibility */
-.card-dark-mode {
-  @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-white;
+/* Custom classes */
+.card-mode {
+  @apply bg-white text-gray-900;
 }
 
 .btn-primary {
-  @apply bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600;
+  @apply bg-blue-600 hover:bg-blue-700 text-white;
 }
 
 .btn-secondary {
-  @apply bg-gray-200 hover:bg-gray-300 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white;
+  @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
 }
 
-/* Ensure form elements are visible in dark mode */
+/* Ensure form elements are visible */
 input, textarea, select {
-  @apply bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600;
+  @apply bg-white text-gray-900 border border-gray-300;
 }
