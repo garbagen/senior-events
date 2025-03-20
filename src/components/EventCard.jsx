@@ -7,7 +7,7 @@ import { calendarService } from '../services/calendarService'
 import ImageWithFallback from './ImageWithFallback'
 
 // Default image if none is available
-const DEFAULT_IMAGE = '/images/events/default.jpg';
+const DEFAULT_IMAGE = 'https://www.melilla.es/melillaPortal/resid/1/img/escudo.jpg';
 
 // Fallback category images
 const IMAGE_CATEGORY_MAP = {
